@@ -1,0 +1,7 @@
+1:  argc error
+-1: Failed to initialize random number generator
+-2: Failed to generate random number
+-3: Failed to set key in encryption
+-4: Invalid key size
+-5: Failed for encryption
+-6: Failed for decryption

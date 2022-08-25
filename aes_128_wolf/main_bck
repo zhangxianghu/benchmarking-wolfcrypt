@@ -1,0 +1,451 @@
+/* Test aes_ctr
+*  1. If test on IoT devices, change %u to %lu in line: printf("Running time: %u\n", result);
+*/
+
+// #include <stdio.h>
+// #include <stdlib.h>
+// #include <unistd.h>
+// #include <termios.h>
+// #include <wolfssl/options.h>
+// #include <wolfssl/wolfcrypt/sha256.h>
+// #include <wolfssl/wolfcrypt/random.h>
+// #include <wolfssl/wolfcrypt/pwdbased.h>
+// #include <wolfssl/wolfcrypt/aes.h>
+// #include <wolfssl/wolfcrypt/settings.h>
+// #include <wolfssl/version.h>
+// #include <wolfssl/wolfcrypt/wc_port.h>
+// #include "xtimer.h"
+// #include "log.h"
+
+#include <stdio.h>
+#include <unistd.h>
+#include <wolfssl/wolfcrypt/settings.h>
+#include <wolfssl/wolfcrypt/sha256.h>
+#include <wolfssl/wolfcrypt/random.h>
+#include <wolfssl/wolfcrypt/pwdbased.h>
+#include <wolfssl/wolfcrypt/aes.h>
+#include "xtimer.h"
+#include "log.h"
+
+#define KEY_SIZE 16
+#define SALT_SIZE 8
+
+// #define TESTC 12
+#if defined(WOLFSSL_AES_COUNTER)
+#define TESTC 10 
+#endif
+
+#if !defined(NO_AES)
+#define TESTAES 11
+#endif
+
+/* Initialize the secret key */
+static byte key[KEY_SIZE];
+
+/* start time of a function */
+static void time_start(uint32_t* start) {
+    *start = xtimer_now_usec();
+}
+
+/* running time of a function */
+static void time_result_print(uint32_t start) {
+    uint32_t result;
+    result = xtimer_now_usec() - start;
+
+    printf("Running time: %u\n", result);
+}
+
+/* print a unsigned number */
+static void print_unsigned(unsigned num) {
+    printf("%u bytes\n", num);
+}
+
+/* Generate a secret key with specific size */
+int keyGen(byte* key, int size) {
+    int ret;
+    WC_RNG rng;
+
+    // Hardcode password
+    char* passwd = "passwordpasswordpasswordpassword";
+
+    // Hardcode salt 
+    /* byte salt[] = { 0x78, 0x57, 0x8E, 0x5a, 0x5d, 0x63, 0xcb, 0x06 }; */
+
+    // Or generate salt randomly
+    byte salt[SALT_SIZE];
+
+    ret = wc_InitRng(&rng);
+    if (ret != 0) {
+        printf("Failed to initialize random number generator\n");
+        return -1;
+    }
+    
+    ret = wc_RNG_GenerateBlock(&rng, salt, SALT_SIZE);
+    if (ret != 0)
+        return -2;
+    
+    // Generate key with PBKDF2
+    ret = wc_PBKDF2(key, (byte*)passwd, (int)XSTRLEN(passwd), salt, (int)sizeof(salt), 1024, size, WC_SHA256);
+
+    if (ret != 0) {
+        return ret;
+    }
+
+    wc_FreeRng(&rng); 
+    return 0;
+}
+
+/* Encrypt a random input 
+*  Input size: input_size
+*  Key: 
+*/ 
+// int aesCtrEnc(byte* key, unsigned input_size)
+
+static int aesCtrEnc(Aes* aes, int size, int input_size) {
+
+    printf("key size is %d\n", size);
+    // printf("key size: %d\n", sizeof(key));
+    for(int j = 0; j < (int)sizeof(key); j++) {
+        printf("%X, ", key[j]);
+    }
+    puts("");
+    // printf("Key!, %d\n", (int)sizeof(key));
+
+    WC_RNG rng;
+    byte input[input_size]; 
+    int ret = 0; 
+    byte iv[AES_BLOCK_SIZE];
+    byte output[input_size]; 
+
+    wc_InitRng(&rng);
+    if (ret != 0) {
+        printf("Failed to initialize random number generator\n");
+        return -1;
+    }
+    
+    ret = wc_RNG_GenerateBlock(&rng, input, input_size);
+    if (ret != 0)
+        return -2;
+
+    ret = wc_RNG_GenerateBlock(&rng, iv, AES_BLOCK_SIZE);
+    if (ret != 0)
+        return -2;
+
+    printf("Input size is %d\n", (int)sizeof(input));
+    for(int i = 0; i < (int)sizeof(input); i++) {
+        printf("%X, ", input[i]);
+    }
+    puts("");
+    printf("IV size is %d\n", (int)sizeof(iv));
+    for(int i = 0; i < (int)sizeof(iv); i++) {
+        printf("%X, ", iv[i]);
+    }
+    puts("");
+
+    /* sets key */
+    ret = wc_AesSetKey(aes, key, AES_BLOCK_SIZE, iv, AES_ENCRYPTION);
+    // ret = wc_AesSetKeyDirect(aes, key, AES_BLOCK_SIZE, iv, AES_ENCRYPTION);
+    if (ret != 0)
+        return -3;
+
+    // wc_AesEncryptDirect(aes, output, input);
+    ret = wc_AesCtrEncrypt(aes, output, input, sizeof(input));
+    // ret = wc_AesCbcEncrypt(aes, output, input, sizeof(input));
+    if (ret != 0)
+        return -1006;
+
+    printf("Output size is %d\n", (int)sizeof(output));
+    for(int i = 0; i < (int)sizeof(output); i++) {
+        printf("%X, ", output[i]);
+    }
+    // printf("%u\n", input_size);
+
+    // wc_FreeRng(&rng); 
+    return 0;
+}
+
+
+
+int main(void) {
+    // Uncomment this if test on SAMR21
+    // xtimer_sleep(5);
+
+    // uint32_t input_gen_time;
+    unsigned input_size;
+    
+    puts("=========================");
+    puts("Start testing for AES-CTR");
+    puts("=========================\n");
+
+    xtimer_sleep(1);
+
+    int size = KEY_SIZE;
+    // Key generation 
+    uint32_t start;
+    Aes aes;
+    
+    puts("Start key generation...");
+    xtimer_sleep(1);    
+    LOG_INFO("Key generated with size %d!\n", size * 8);
+    time_start(&start);
+
+    keyGen(key, size);
+    
+    time_result_print(start);
+    puts("End key generation...\n");
+
+    // Encryption 
+    input_size = 16;
+    puts("Start encrytpion test...");
+    xtimer_sleep(1);
+    printf("Input size: ");
+    print_unsigned(input_size);
+    aesCtrEnc(&aes, size, input_size);
+
+    // for(int i = 0; i < (int)sizeof(key); i++) {
+    //     printf("%X, ", key[i]);
+    // }
+    // printf("\n");
+
+    // printf("key size: %d\n", sizeof(key));
+    
+    printf("\n");
+    printf("%d\n", TESTC);
+    printf("%d\n", TESTAES);
+
+    return 0;
+}
+
+// int main(void) {
+//     printf("start\n");
+//     uint32_t start = xtimer_now_usec();
+//     xtimer_sleep(2);
+//     uint32_t end = xtimer_now_usec(); 
+//     printf("%u\n", end-start);
+// }
+
+/*
+ * Makes a cryptographically secure key by stretching a user entered key
+ */
+// int GenerateKey(WC_RNG* rng, byte* key, int size, byte* salt) {
+//     int ret;
+
+//     ret = wc_RNG_GenerateBlock(rng, salt, SALT_SIZE);
+//     if (ret != 0)
+//         return -1020;
+
+
+//     ret = wc_PBKDF2(key, key, strlen((const char*)key), salt, SALT_SIZE, 4096,
+//         size, WC_SHA256);
+//     if (ret != 0)
+//         return -1030;
+
+//     return 0;
+// }
+
+// int main(void) {
+//     LOG_INFO("Key generation!\n");
+//     int ret;
+//     byte* key;
+//     byte salt[] = {};
+
+//     key = malloc(SIZE);
+//     ret = wc_PBKDF2(key, key, strlen((const char*)key), salt, sizeof(salt), 4096, size, wc_SHA256);
+
+//     printf("%d\n", strlen((const char*)key));
+//     return 1;
+// }
+
+
+
+
+
+
+
+
+
+/* aes-file-encrypt.c
+ *
+ * Copyright (C) 2006-2020 wolfSSL Inc.
+ *
+ * This file is part of wolfSSL. (formerly known as CyaSSL)
+ *
+ * wolfSSL is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * wolfSSL is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
+// #include <stdio.h>
+// #include <unistd.h>
+// #include <termios.h>
+// #include <wolfssl/options.h>
+// #include <wolfssl/wolfcrypt/aes.h>
+// #include <wolfssl/wolfcrypt/sha256.h>
+// #include <wolfssl/wolfcrypt/random.h>
+// #include <wolfssl/wolfcrypt/pwdbased.h>
+// #include <wolfssl/wolfcrypt/settings.h>
+// #include <wolfssl/version.h>
+// #include <wolfssl/wolfcrypt/wc_port.h>
+
+// #define HAVE_PBKDF2 1
+
+
+
+/*
+ * Makes a cryptographically secure key by stretching a user entered key
+ */
+// int GenerateKey(WC_RNG* rng, byte* key, int size, byte* salt, int pad)
+// {
+//     int ret;
+
+//     ret = wc_RNG_GenerateBlock(rng, salt, SALT_SIZE);
+//     if (ret != 0)
+//         return -1020;
+
+//     if (pad == 0)
+//         salt[0] = 0;
+
+//     /* stretches key */
+//     ret = wc_PBKDF2(key, key, strlen((const char*)key), salt, SALT_SIZE, 4096,
+//         size, WC_SHA256);
+//     if (ret != 0)
+//         return -1030;
+
+//     return 0;
+// }
+
+// int main(void)
+// {
+//     int ret = 0;
+//     char* passwd = "passwordpasswordpasswordpassword";
+//     const byte salt[] = { 0x78, 0x57, 0x8E, 0x5a, 0x5d, 0x63, 0xcb, 0x06 };
+//     byte key[32];
+
+//     ret = wc_PBKDF2(key, (byte*)passwd, (int)XSTRLEN(passwd), salt, (int)sizeof(salt), 2048, sizeof(key), WC_SHA256);
+
+//     if (ret != 0)
+//         printf("Error\n");
+
+//     printf("Key generated\n");
+
+//     return 0;
+// }
+
+// #else
+// int main(void)
+// {
+//     printf("pwdbased and HAVE_PBKDF2 not compiled in\n");
+//     return 0;
+// }
+// #endif
+
+
+
+
+
+#define SALT_SIZE 8
+
+        // #if defined(WOLFSSL_AES_COUNTER)
+        // #define TESTC 10 
+        // #endif
+
+/* start time of a function */
+static void time_start(uint32_t* start) {
+    *start = xtimer_now_usec();
+}
+
+/* running time of a function */
+static void time_result_print(uint32_t start) {
+    uint32_t result;
+    result = xtimer_now_usec() - start;
+
+    printf("Running time: %u\n", result);
+}
+
+/* print a unsigned number */
+// static void print_unsigned(unsigned num) {
+//     printf("%u bytes\n", num);
+// }
+
+/* Initialize the secret key */
+static byte* key;
+static unsigned key_size;
+
+/* Generate a secret key with specific size: 128, 192, 256 */
+static int _encrypt_handler_keyGen(int argc, char **argv) {
+
+    if (argc < 2) {
+        printf("usage: %s [size]\n", argv[0]);
+        return 1;
+    }
+    int ret;
+    WC_RNG rng;
+    uint32_t start;
+
+    puts("=========================");
+    puts("Start testing for AES-CTR");
+    puts("=========================\n");
+
+    key_size = (unsigned) (strtoul(argv[1], 0L, 10))/8;
+    if (key_size != 16 && key_size != 24 && key_size != 32) {
+        /* if the entered size does not match acceptable size */
+        printf("Invalid AES key size\n");
+        return -4;
+    }
+
+    puts("Start key generation...");
+    xtimer_sleep(1);    
+    LOG_INFO("Key generated with size %d!\n", key_size * 8);
+
+    // Start time
+    time_start(&start);
+
+    key = malloc(key_size*(sizeof(byte)));
+    
+    // Hardcode password
+    char* passwd = "passwordpasswordpasswordpassword";
+
+    // Hardcode salt 
+    // byte salt[] = { 0x78, 0x57, 0x8E, 0x5a, 0x5d, 0x63, 0xcb, 0x06 }; 
+    // Or generate salt randomly
+    byte salt[SALT_SIZE];
+
+    ret = wc_InitRng(&rng);
+    if (ret != 0) {
+        printf("Failed to initialize random number generator\n");
+        return -1;
+    }
+    
+    ret = wc_RNG_GenerateBlock(&rng, salt, SALT_SIZE);
+    if (ret != 0)
+        return -2;
+    
+    // Generate key with PBKDF2
+    ret = wc_PBKDF2(key, (byte*)passwd, (int)XSTRLEN(passwd), salt, (int)sizeof(salt), 1024, key_size, WC_SHA256);
+
+    if (ret != 0) {
+        return ret;
+    }
+
+    // print running time
+    time_result_print(start);
+    puts("End key generation...\n");
+
+    for(unsigned i = 0; i < key_size; i++) {
+        printf("%X, ", key[i]);
+    }
+    printf("\n");
+
+    wc_FreeRng(&rng); 
+    return 0;
+}
